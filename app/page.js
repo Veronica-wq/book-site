@@ -4,14 +4,14 @@ import Link from 'next/link'
 import { createClient } from '../lib/supabase'
 
 const CATEGORIES = [
-  { id: 'fantasy', label: '🔮 Фэнтези', query: 'subject:fantasy' },
-  { id: 'scifi', label: '🚀 Фантастика', query: 'subject:science_fiction' },
-  { id: 'detective', label: '🕵️ Детективы', query: 'subject:detective' },
-  { id: 'classic', label: '📚 Классика', query: 'subject:classic' },
-  { id: 'romance', label: '💕 Романы', query: 'subject:romance' },
-  { id: 'adventure', label: '🗺️ Приключения', query: 'subject:adventure' },
-  { id: 'horror', label: '👻 Ужасы', query: 'subject:horror' },
-  { id: 'history', label: '🏛️ История', query: 'subject:history' },
+  { id: 'fantasy', label: '🔮 Фэнтези', query: 'фэнтези' },
+  { id: 'scifi', label: '🚀 Фантастика', query: 'фантастика' },
+  { id: 'detective', label: '🕵️ Детективы', query: 'детектив' },
+  { id: 'classic', label: '📚 Классика', query: 'классическая литература' },
+  { id: 'romance', label: '💕 Романы', query: 'любовный роман' },
+  { id: 'adventure', label: '🗺️ Приключения', query: 'приключения' },
+  { id: 'horror', label: '👻 Ужасы', query: 'ужасы' },
+  { id: 'history', label: '🏛️ История', query: 'исторический роман' },
 ]
 
 export default function Home() {
@@ -60,7 +60,13 @@ export default function Home() {
     try {
       const res = await fetch(`/api/books?q=${encodeURIComponent(category.query)}`)
       const data = await res.json()
-      setBooks(data.items || [])
+      let items = data.items || []
+
+      // Для категорий показываем только книги Google Books
+      // (у Open Library плохие категории — один мусор)
+      items = items.filter((b) => !b._source || b._source === 'google')
+
+      setBooks(items)
     } catch (err) {
       console.error(err)
       setBooks([])
@@ -125,7 +131,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Результаты поиска */}
+      {/* Ничего не найдено */}
       {searched && !loading && books.length === 0 && (
         <p className="text-gray-400 mb-6">Ничего не найдено. Попробуй другое название.</p>
       )}
@@ -134,16 +140,17 @@ export default function Home() {
         <h2 className="text-xl font-bold mb-4">Результаты поиска</h2>
       )}
 
+      {/* Сетка книг */}
       {books.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-10">
           {books.map((book) => {
-            const info = book.volumeInfo
+            const info = book.volumeInfo || {}
             const coverUrl = info.imageLinks?.thumbnail?.replace('http://', 'https://')
 
             return (
               <Link
                 key={book.id}
-                href={`/book/${book.id}`}
+                href={`/book/${encodeURIComponent(book.id)}`}
                 className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500 transition"
               >
                 {coverUrl ? (
@@ -155,7 +162,7 @@ export default function Home() {
                 )}
                 <div className="p-3">
                   <h3 className="font-semibold text-sm line-clamp-2 group-hover:text-purple-400">
-                    {info.title}
+                    {info.title || 'Без названия'}
                   </h3>
                   <p className="text-xs text-gray-400 mt-1">
                     {info.authors?.join(', ') || 'Автор неизвестен'}
