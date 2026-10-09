@@ -7,7 +7,6 @@ function BookContent() {
   const params = useParams()
   const supabase = createClient()
   const bookKey = decodeURIComponent(params.id)
-
   const isOpenLibrary = bookKey.startsWith('/')
 
   const [book, setBook] = useState(null)
@@ -19,7 +18,8 @@ function BookContent() {
   const [hover, setHover] = useState(0)
   const [shelfStatus, setShelfStatus] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [showPdf, setShowPdf] = useState(false)
+  const [freeLink, setFreeLink] = useState(null)
+  const [checkingFree, setCheckingFree] = useState(false)
 
   useEffect(() => {
     loadBook()
@@ -27,45 +27,26 @@ function BookContent() {
     loadUser()
   }, [bookKey])
 
+  // Проверяем, есть ли книга в свободном доступе (Gutenberg / Wikisource)
+  useEffect(() => {
+    if (book?.title) {
+      checkFreeAvailability()
+    }
+  }, [book])
+
   async function loadBook() {
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookKey)}`)
-
-      if (!res.ok) {
-        setBook(null)
-        setLoading(false)
-        return
-      }
-
+      if (!res.ok) { setBook(null); setLoading(false); return }
       const data = await res.json()
-
-      if (isOpenLibrary) {
-        setBook(data)
-      } else {
-        setBook(
-          data.volumeInfo
-            ? {
-                ...data.volumeInfo,
-                _google: true,
-                _accessInfo: data.accessInfo,
-                _saleInfo: data.saleInfo,
-              }
-            : null
-        )
-      }
-    } catch (err) {
-      console.error(err)
-      setBook(null)
-    }
+      if (isOpenLibrary) { setBook(data) }
+      else { setBook(data.volumeInfo ? { ...data.volumeInfo, _google: true, _accessInfo: data.accessInfo, _saleInfo: data.saleInfo } : null) }
+    } catch (err) { console.error(err); setBook(null) }
     setLoading(false)
   }
 
   async function loadReviews() {
-    const { data } = await supabase
-      .from('reviews')
-      .select('*, profiles(username, avatar_url)')
-      .eq('book_id', bookKey)
-      .order('created_at', { ascending: false })
+    const { data } = await supabase.from('reviews').select('*, profiles(username, avatar_url)').eq('book_id', bookKey).order('created_at', { ascending: false })
     setReviews(data || [])
   }
 
@@ -73,67 +54,36 @@ function BookContent() {
     const { data } = await supabase.auth.getUser()
     if (data.user) {
       setUser(data.user)
-      const { data: shelfData } = await supabase
-        .from('shelves')
-        .select('status')
-        .eq('user_id', data.user.id)
-        .eq('book_id', bookKey)
-        .maybeSingle()
+      const { data: shelfData } = await supabase.from('shelves').select('status').eq('user_id', data.user.id).eq('book_id', bookKey).maybeSingle()
       if (shelfData) setShelfStatus(shelfData.status)
     }
   }
 
-  function getTitle() {
-    return book?.title || 'Без названия'
+  // Ищем книгу в бесплатных источниках
+  async function checkFreeAvailability() {
+    setCheckingFree(true)
+    try {
+      const title = book.title || book.volumeInfo?.title || ''
+      const res = await fetch(`/api/free-books?title=${encodeURIComponent(title)}`)
+      const data = await res.json()
+      if (data.link) setFreeLink(data)
+    } catch (err) { console.error(err) }
+    setCheckingFree(false)
   }
 
-  function getAuthors() {
-    if (book?._google) return book.authors || []
-    return book?.by_statement ? [book.by_statement] : []
-  }
-
-  function getCoverUrl(size = 'L') {
-    if (book?._google) {
-      return book.imageLinks?.thumbnail?.replace('http://', 'https://') || null
-    }
-    const coverId = book?.covers?.[0]
-    return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null
-  }
-
-  function getDescription() {
-    let desc = book?.description
-    if (typeof desc === 'object' && desc?.value) desc = desc.value
-    return desc || null
-  }
-
-  function getSubjects() {
-    if (book?._google) return book.categories || []
-    return book?.subjects || []
-  }
-
-  function getYear() {
-    if (book?._google) return book.publishedDate
-    return book?.first_publish_date
-  }
+  function getTitle() { return book?.title || 'Без названия' }
+  function getAuthors() { if (book?._google) return book.authors || []; return book?.by_statement ? [book.by_statement] : [] }
+  function getCoverUrl(size = 'L') { if (book?._google) return book.imageLinks?.thumbnail?.replace('http://', 'https://') || null; const coverId = book?.covers?.[0]; return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null }
+  function getDescription() { let desc = book?.description; if (typeof desc === 'object' && desc?.value) desc = desc.value; return desc || null }
+  function getSubjects() { if (book?._google) return book.categories || []; return book?.subjects || [] }
+  function getYear() { if (book?._google) return book.publishedDate; return book?.first_publish_date }
 
   async function setShelf(status) {
     if (!user) return alert('Войди в аккаунт!')
-
-    const cover = getCoverUrl('M')
-    const title = getTitle()
-
-    if (shelfStatus === status) {
-      await supabase.from('shelves').delete()
-        .eq('user_id', user.id).eq('book_id', bookKey)
-      setShelfStatus(null)
-    } else {
-      const { error } = await supabase.from('shelves').upsert({
-        user_id: user.id,
-        book_id: bookKey,
-        book_title: title,
-        book_cover: cover,
-        status,
-      }, { onConflict: 'user_id,book_id' })
+    const cover = getCoverUrl('M'); const title = getTitle()
+    if (shelfStatus === status) { await supabase.from('shelves').delete().eq('user_id', user.id).eq('book_id', bookKey); setShelfStatus(null) }
+    else {
+      const { error } = await supabase.from('shelves').upsert({ user_id: user.id, book_id: bookKey, book_title: title, book_cover: cover, status }, { onConflict: 'user_id,book_id' })
       if (error) return alert(error.message)
       setShelfStatus(status)
     }
@@ -143,23 +93,11 @@ function BookContent() {
     e.preventDefault()
     if (!user) return alert('Войди в аккаунт!')
     if (!content.trim()) return alert('Напиши текст отзыва')
-
     setSubmitting(true)
-
-    const { error } = await supabase.from('reviews').insert({
-      user_id: user.id,
-      book_id: bookKey,
-      book_title: getTitle(),
-      book_cover: getCoverUrl('M'),
-      rating,
-      content,
-    })
+    const { error } = await supabase.from('reviews').insert({ user_id: user.id, book_id: bookKey, book_title: getTitle(), book_cover: getCoverUrl('M'), rating, content })
     setSubmitting(false)
-
     if (error) return alert(error.message)
-    setContent('')
-    setRating(5)
-    loadReviews()
+    setContent(''); setRating(5); loadReviews()
   }
 
   if (loading) return <p className="text-gray-400">Загрузка...</p>
@@ -170,284 +108,73 @@ function BookContent() {
   const subjects = getSubjects()
   const authors = getAuthors()
   const year = getYear()
-
-  const avgRating =
-    reviews.length > 0
-      ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-      : null
+  const avgRating = reviews.length > 0 ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null
 
   return (
     <div>
-      {/* Информация о книге */}
       <div className="flex flex-col md:flex-row gap-6 mb-8">
-        {coverUrl ? (
-          <img src={coverUrl} alt={getTitle()} className="w-48 rounded-lg shadow-lg shrink-0" />
-        ) : (
-          <div className="w-48 h-72 bg-gray-800 rounded-lg flex items-center justify-center text-gray-600 shrink-0">
-            Нет обложки
-          </div>
-        )}
-
+        {coverUrl ? <img src={coverUrl} alt={getTitle()} className="w-48 rounded-lg shadow-lg shrink-0" /> : <div className="w-48 h-72 bg-gray-800 rounded-lg flex items-center justify-center text-gray-600 shrink-0">Нет обложки</div>}
         <div className="flex-1">
           <h1 className="text-3xl font-bold mb-2">{getTitle()}</h1>
+          {authors.length > 0 && <p className="text-gray-300 mb-2">{authors.join(', ')}</p>}
+          {year && <p className="text-gray-400 mb-2 text-sm">Год: {year}</p>}
+          {avgRating && <p className="text-yellow-400 mb-4">★ {avgRating} ({reviews.length} отзывов)</p>}
+          {subjects.length > 0 && <div className="flex flex-wrap gap-2 mb-4">{subjects.slice(0, 8).map((s, i) => <span key={i} className="text-xs px-3 py-1 bg-gray-800 rounded-full text-gray-300">{s}</span>)}</div>}
 
-          {authors.length > 0 && (
-            <p className="text-gray-300 mb-2">{authors.join(', ')}</p>
-          )}
-
-          {year && (
-            <p className="text-gray-400 mb-2 text-sm">Год: {year}</p>
-          )}
-
-          {avgRating && (
-            <p className="text-yellow-400 mb-4">
-              ★ {avgRating} ({reviews.length} отзывов)
-            </p>
-          )}
-
-          {subjects.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-4">
-              {subjects.slice(0, 8).map((s, i) => (
-                <span key={i} className="text-xs px-3 py-1 bg-gray-800 rounded-full text-gray-300">
-                  {s}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Кнопка "Читать онлайн" — если есть PDF */}
-          {book?._accessInfo?.pdf?.downloadLink && (
-            <button
-              onClick={() => setShowPdf(true)}
-              className="inline-block mb-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg font-bold transition-all"
-            >
-              📖 Читать онлайн
-            </button>
-          )}
-
-          {/* Если PDF нет, но есть веб-ссылка — ведём на Google */}
-          {!book?._accessInfo?.pdf?.downloadLink &&
-            book?._saleInfo?.saleability === 'FREE' &&
-            book?._accessInfo?.webReaderLink &&
-            book?._accessInfo?.viewability !== 'NO_PAGES' && (
+          {/* Кнопка "Читать бесплатно" — ведёт на Gutenberg или Wikisource */}
+          {freeLink && (
             <a
-              href={book._accessInfo.webReaderLink}
+              href={freeLink.link}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block mb-4 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 rounded-lg font-bold transition-all"
+              className="inline-block mb-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg font-bold transition-all"
             >
-              👀 Читать на Google Books
+              📖 {freeLink.source === 'gutenberg' ? 'Читать на Project Gutenberg' : 'Читать на Wikisource'}
             </a>
+          )}
+          {!freeLink && checkingFree && (
+            <p className="text-sm text-gray-500 mb-4">Проверяем наличие бесплатной версии...</p>
           )}
 
           <div className="flex flex-wrap gap-2 mt-4">
-            <button
-              onClick={() => setShelf('want')}
-              className={`px-4 py-2 rounded-lg font-semibold transition ${
-                shelfStatus === 'want'
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-              }`}
-            >
-              🔖 Хочу прочитать
-            </button>
-            <button
-              onClick={() => setShelf('reading')}
-              className={`px-4 py-2 rounded-lg font-semibold transition ${
-                shelfStatus === 'reading'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-              }`}
-            >
-              📖 Читаю
-            </button>
-            <button
-              onClick={() => setShelf('read')}
-              className={`px-4 py-2 rounded-lg font-semibold transition ${
-                shelfStatus === 'read'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-              }`}
-            >
-              ✅ Прочитано
-            </button>
+            <button onClick={() => setShelf('want')} className={`px-4 py-2 rounded-lg font-semibold transition ${shelfStatus === 'want' ? 'bg-purple-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}`}>🔖 Хочу прочитать</button>
+            <button onClick={() => setShelf('reading')} className={`px-4 py-2 rounded-lg font-semibold transition ${shelfStatus === 'reading' ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}`}>📖 Читаю</button>
+            <button onClick={() => setShelf('read')} className={`px-4 py-2 rounded-lg font-semibold transition ${shelfStatus === 'read' ? 'bg-green-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}`}>✅ Прочитано</button>
           </div>
         </div>
       </div>
 
-      {/* Описание */}
-      {description && (
-        <div className="bg-gray-900 rounded-xl p-6 mb-8">
-          <h2 className="text-xl font-bold mb-3">Описание</h2>
-          <p className="text-gray-300 whitespace-pre-line">{description}</p>
-        </div>
-      )}
+      {description && <div className="bg-gray-900 rounded-xl p-6 mb-8"><h2 className="text-xl font-bold mb-3">Описание</h2><p className="text-gray-300 whitespace-pre-line">{description}</p></div>}
 
-      {/* Отзывы */}
       <h2 className="text-2xl font-bold mb-4">Отзывы ({reviews.length})</h2>
-
       {user ? (
         <form onSubmit={submitReview} className="bg-gray-900 p-5 rounded-xl mb-6">
           <div className="flex gap-1 mb-3">
             {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                type="button"
-                onClick={() => setRating(star)}
-                onMouseEnter={() => setHover(star)}
-                onMouseLeave={() => setHover(0)}
-                className="text-3xl"
-              >
-                <span className={star <= (hover || rating) ? 'text-yellow-400' : 'text-gray-600'}>
-                  ★
-                </span>
-              </button>
+              <button key={star} type="button" onClick={() => setRating(star)} onMouseEnter={() => setHover(star)} onMouseLeave={() => setHover(0)} className="text-3xl"><span className={star <= (hover || rating) ? 'text-yellow-400' : 'text-gray-600'}>★</span></button>
             ))}
           </div>
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Поделись впечатлениями..."
-            className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 outline-none text-white placeholder-gray-500"
-            rows={4}
-          />
-          <button
-            disabled={submitting}
-            className="mt-3 px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg font-semibold"
-          >
-            {submitting ? 'Публикуем...' : 'Опубликовать'}
-          </button>
+          <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Поделись впечатлениями..." className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 outline-none text-white placeholder-gray-500" rows={4} />
+          <button disabled={submitting} className="mt-3 px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg font-semibold">{submitting ? 'Публикуем...' : 'Опубликовать'}</button>
         </form>
       ) : (
-        <p className="text-gray-400 mb-6">
-          <a href="/login" className="text-purple-400 hover:underline">Войди</a>, чтобы оставить отзыв.
-        </p>
+        <p className="text-gray-400 mb-6"><a href="/login" className="text-purple-400 hover:underline">Войди</a>, чтобы оставить отзыв.</p>
       )}
 
       <div className="space-y-4">
-        {reviews.length === 0 && (
-          <p className="text-gray-500 italic">Пока нет отзывов. Будь первой!</p>
-        )}
+        {reviews.length === 0 && <p className="text-gray-500 italic">Пока нет отзывов. Будь первой!</p>}
         {reviews.map((r) => (
           <div key={r.id} className="bg-gray-900 p-4 rounded-xl">
             <div className="flex items-start gap-3 mb-3">
-              {r.profiles?.avatar_url ? (
-                <img
-                  src={r.profiles.avatar_url}
-                  alt="Аватар"
-                  className="w-10 h-10 rounded-full object-cover border border-purple-500 shrink-0"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center shrink-0">
-                  👤
-                </div>
-              )}
-
+              {r.profiles?.avatar_url ? <img src={r.profiles.avatar_url} alt="Аватар" className="w-10 h-10 rounded-full object-cover border border-purple-500 shrink-0" /> : <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center shrink-0">👤</div>}
               <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-start gap-2">
-                  <span className="font-semibold">
-                    {r.profiles?.username || 'Аноним'}
-                  </span>
-                  <span className="text-yellow-400 shrink-0">
-                    {'★'.repeat(r.rating)}
-                  </span>
-                </div>
+                <div className="flex justify-between items-start gap-2"><span className="font-semibold">{r.profiles?.username || 'Аноним'}</span><span className="text-yellow-400 shrink-0">{'★'.repeat(r.rating)}</span></div>
                 <p className="text-gray-300 mt-2 whitespace-pre-line">{r.content}</p>
-                <p className="text-xs text-gray-600 mt-2">
-                  {new Date(r.created_at).toLocaleDateString('ru-RU')}
-                </p>
+                <p className="text-xs text-gray-600 mt-2">{new Date(r.created_at).toLocaleDateString('ru-RU')}</p>
               </div>
             </div>
           </div>
         ))}
-      </div>
-
-      {/* ─── Похожие книги ─── */}
-      <SimilarBooks bookId={bookKey} isOpenLibrary={isOpenLibrary} />
-
-      {/* ─── Модальное окно чтения PDF ─── */}
-      {showPdf && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-          <div className="flex justify-between items-center px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
-            <button
-              onClick={() => setShowPdf(false)}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold"
-            >
-              ✕ Закрыть
-            </button>
-            <h2 className="text-white font-semibold truncate mx-4">{getTitle()}</h2>
-            <div className="w-20 shrink-0" />
-          </div>
-
-          <iframe
-            src={`/api/books/${encodeURIComponent(bookKey)}/pdf`}
-            className="flex-1 w-full bg-white"
-            title="Чтение книги"
-          />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SimilarBooks({ bookId, isOpenLibrary }) {
-  const [books, setBooks] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (isOpenLibrary) {
-      setLoading(false)
-      return
-    }
-
-    fetch(`/api/books/${encodeURIComponent(bookId)}/similar`)
-      .then((res) => res.json())
-      .then((data) => {
-        setBooks(data.items || [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
-  }, [bookId, isOpenLibrary])
-
-  if (loading) return null
-  if (books.length === 0) return null
-
-  return (
-    <div className="mt-10">
-      <h2 className="text-2xl font-bold mb-4">📚 Читателям также нравится</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {books.map((b) => {
-          const info = b.volumeInfo
-          const coverUrl = info.imageLinks?.thumbnail?.replace('http://', 'https://')
-
-          return (
-            <a
-              key={b.id}
-              href={`/book/${b.id}`}
-              className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500 transition"
-            >
-              {coverUrl ? (
-                <img
-                  src={coverUrl}
-                  alt={info.title}
-                  className="w-full h-56 object-cover"
-                />
-              ) : (
-                <div className="w-full h-56 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">
-                  Нет обложки
-                </div>
-              )}
-              <div className="p-3">
-                <h3 className="font-semibold text-sm line-clamp-2 group-hover:text-purple-400">
-                  {info.title}
-                </h3>
-                <p className="text-xs text-gray-400 mt-1">
-                  {info.authors?.join(', ') || 'Автор неизвестен'}
-                </p>
-              </div>
-            </a>
-          )
-        })}
       </div>
     </div>
   )
