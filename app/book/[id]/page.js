@@ -8,7 +8,6 @@ function BookContent() {
   const supabase = createClient()
   const bookKey = decodeURIComponent(params.id)
 
-  // Определяем источник по формату ID
   const isOpenLibrary = bookKey.startsWith('/')
 
   const [book, setBook] = useState(null)
@@ -27,32 +26,29 @@ function BookContent() {
     loadUser()
   }, [bookKey])
 
-  // Загрузка книги — из Google Books или Open Library
-async function loadBook() {
-  try {
-    const res = await fetch(`/api/books/${encodeURIComponent(bookKey)}`)
+  async function loadBook() {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookKey)}`)
 
-    if (!res.ok) {
+      if (!res.ok) {
+        setBook(null)
+        setLoading(false)
+        return
+      }
+
+      const data = await res.json()
+
+      if (isOpenLibrary) {
+        setBook(data)
+      } else {
+        setBook(data.volumeInfo ? { ...data.volumeInfo, _google: true } : null)
+      }
+    } catch (err) {
+      console.error(err)
       setBook(null)
-      setLoading(false)
-      return
     }
-
-    const data = await res.json()
-
-    if (isOpenLibrary) {
-      // Open Library возвращает объект книги напрямую
-      setBook(data)
-    } else {
-      // Google Books возвращает { volumeInfo: { ... } }
-      setBook(data.volumeInfo ? { ...data.volumeInfo, _google: true } : null)
-    }
-  } catch (err) {
-    console.error(err)
-    setBook(null)
+    setLoading(false)
   }
-  setLoading(false)
-}
 
   async function loadReviews() {
     const { data } = await supabase
@@ -77,7 +73,6 @@ async function loadBook() {
     }
   }
 
-  // Универсальные геттеры — работают с обоими источниками
   function getTitle() {
     return book?.title || 'Без названия'
   }
@@ -210,7 +205,6 @@ async function loadBook() {
             </div>
           )}
 
-          {/* Кнопки полок */}
           <div className="flex flex-wrap gap-2 mt-4">
             <button
               onClick={() => setShelf('want')}
@@ -331,6 +325,73 @@ async function loadBook() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ─── Похожие книги ─── */}
+      <SimilarBooks bookId={bookKey} isOpenLibrary={isOpenLibrary} />
+
+    </div>
+  )
+}
+
+function SimilarBooks({ bookId, isOpenLibrary }) {
+  const [books, setBooks] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (isOpenLibrary) {
+      setLoading(false)
+      return
+    }
+
+    fetch(`/api/books/${encodeURIComponent(bookId)}/similar`)
+      .then((res) => res.json())
+      .then((data) => {
+        setBooks(data.items || [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [bookId, isOpenLibrary])
+
+  if (loading) return null
+  if (books.length === 0) return null
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-2xl font-bold mb-4">📚 Читателям также нравится</h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {books.map((b) => {
+          const info = b.volumeInfo
+          const coverUrl = info.imageLinks?.thumbnail?.replace('http://', 'https://')
+
+          return (
+            <a
+              key={b.id}
+              href={`/book/${b.id}`}
+              className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500 transition"
+            >
+              {coverUrl ? (
+                <img
+                  src={coverUrl}
+                  alt={info.title}
+                  className="w-full h-56 object-cover"
+                />
+              ) : (
+                <div className="w-full h-56 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">
+                  Нет обложки
+                </div>
+              )}
+              <div className="p-3">
+                <h3 className="font-semibold text-sm line-clamp-2 group-hover:text-purple-400">
+                  {info.title}
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  {info.authors?.join(', ') || 'Автор неизвестен'}
+                </p>
+              </div>
+            </a>
+          )
+        })}
       </div>
     </div>
   )
