@@ -3,6 +3,17 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '../lib/supabase'
 
+const CATEGORIES = [
+  { id: 'fantasy', label: '🔮 Фэнтези', query: 'фэнтези' },
+  { id: 'scifi', label: '🚀 Фантастика', query: 'фантастика' },
+  { id: 'detective', label: '🕵️ Детективы', query: 'детектив' },
+  { id: 'classic', label: '📚 Классика', query: 'классическая литература' },
+  { id: 'romance', label: '💕 Романы', query: 'любовный роман' },
+  { id: 'adventure', label: '🗺️ Приключения', query: 'приключения' },
+  { id: 'horror', label: '👻 Ужасы', query: 'ужасы' },
+  { id: 'history', label: '🏛️ История', query: 'исторический роман' },
+]
+
 export default function Home() {
   const supabase = createClient()
   const [query, setQuery] = useState('')
@@ -10,6 +21,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [popular, setPopular] = useState([])
   const [searched, setSearched] = useState(false)
+  const [activeCategory, setActiveCategory] = useState(null)
 
   useEffect(() => {
     loadPopular()
@@ -24,10 +36,11 @@ export default function Home() {
   }
 
   async function searchBooks(e) {
-    e.preventDefault()
+    if (e) e.preventDefault()
     if (!query.trim()) return
     setLoading(true)
     setSearched(true)
+    setActiveCategory(null)
     try {
       const res = await fetch(`/api/books?q=${encodeURIComponent(query)}`)
       const data = await res.json()
@@ -39,11 +52,34 @@ export default function Home() {
     setLoading(false)
   }
 
+  async function loadCategory(category) {
+    setActiveCategory(category.id)
+    setSearched(true)
+    setLoading(true)
+    setQuery('')
+    try {
+      const res = await fetch(`/api/books?q=${encodeURIComponent(category.query)}`)
+      const data = await res.json()
+      setBooks(data.items || [])
+    } catch (err) {
+      console.error(err)
+      setBooks([])
+    }
+    setLoading(false)
+  }
+
+  function clearSearch() {
+    setSearched(false)
+    setQuery('')
+    setActiveCategory(null)
+    setBooks([])
+  }
+
   return (
     <div>
       <h1 className="text-3xl font-bold mb-6">Найди свою следующую книгу</h1>
 
-      <form onSubmit={searchBooks} className="flex gap-2 mb-8">
+      <form onSubmit={searchBooks} className="flex gap-2 mb-6">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -55,50 +91,83 @@ export default function Home() {
         </button>
       </form>
 
+      {/* Кнопки категорий */}
+      <div className="flex flex-wrap gap-2 mb-8">
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => loadCategory(cat)}
+            className={`px-4 py-2 rounded-lg font-semibold transition text-sm ${
+              activeCategory === cat.id
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+            }`}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
       {loading && <p className="text-gray-400">Ищем...</p>}
+
+      {/* Заголовок активной категории */}
+      {activeCategory && !loading && books.length > 0 && (
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">
+            {CATEGORIES.find((c) => c.id === activeCategory)?.label}
+          </h2>
+          <button
+            onClick={clearSearch}
+            className="text-sm text-gray-400 hover:text-purple-400"
+          >
+            ✕ Закрыть
+          </button>
+        </div>
+      )}
 
       {/* Результаты поиска */}
       {searched && !loading && books.length === 0 && (
         <p className="text-gray-400 mb-6">Ничего не найдено. Попробуй другое название.</p>
       )}
 
-      {books.length > 0 && (
-        <>
-          <h2 className="text-xl font-bold mb-4">Результаты поиска</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-10">
-            {books.map((book) => {
-              const info = book.volumeInfo
-              const coverUrl = info.imageLinks?.thumbnail?.replace('http://', 'https://')
-
-              return (
-                <Link
-                  key={book.id}
-                  href={`/book/${book.id}`}
-                  className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500 transition"
-                >
-                  {coverUrl ? (
-                    <img src={coverUrl} alt={info.title} className="w-full h-56 object-cover" />
-                  ) : (
-                    <div className="w-full h-56 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">
-                      Нет обложки
-                    </div>
-                  )}
-                  <div className="p-3">
-                    <h3 className="font-semibold text-sm line-clamp-2 group-hover:text-purple-400">
-                      {info.title}
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {info.authors?.join(', ') || 'Автор неизвестен'}
-                    </p>
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        </>
+      {books.length > 0 && !activeCategory && (
+        <h2 className="text-xl font-bold mb-4">Результаты поиска</h2>
       )}
 
-      {/* Популярные книги на сайте */}
+      {books.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-10">
+          {books.map((book) => {
+            const info = book.volumeInfo
+            const coverUrl = info.imageLinks?.thumbnail?.replace('http://', 'https://')
+
+            return (
+              <Link
+                key={book.id}
+                href={`/book/${book.id}`}
+                className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500 transition"
+              >
+                {coverUrl ? (
+                  <img src={coverUrl} alt={info.title} className="w-full h-56 object-cover" />
+                ) : (
+                  <div className="w-full h-56 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">
+                    Нет обложки
+                  </div>
+                )}
+                <div className="p-3">
+                  <h3 className="font-semibold text-sm line-clamp-2 group-hover:text-purple-400">
+                    {info.title}
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {info.authors?.join(', ') || 'Автор неизвестен'}
+                  </p>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Популярные книги */}
       {!searched && popular.length > 0 && (
         <>
           <div className="flex items-center gap-2 mb-4">
@@ -137,7 +206,6 @@ export default function Home() {
         </>
       )}
 
-      {/* Заглушка, если популярных пока нет */}
       {!searched && popular.length === 0 && (
         <div className="bg-gray-900 rounded-xl p-8 text-center text-gray-400">
           Пока никто не добавлял книги на полки. Будь первой! 👆
