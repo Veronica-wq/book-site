@@ -4,14 +4,14 @@ import Link from 'next/link'
 import { createClient } from '../lib/supabase'
 
 const CATEGORIES = [
-  { id: 'fantasy', label: '🔮 Фэнтези', query: 'фэнтези' },
-  { id: 'scifi', label: '🚀 Фантастика', query: 'фантастика' },
-  { id: 'detective', label: '🕵️ Детективы', query: 'детектив' },
-  { id: 'classic', label: '📚 Классика', query: 'классическая литература' },
-  { id: 'romance', label: '💕 Романы', query: 'любовный роман' },
-  { id: 'adventure', label: '🗺️ Приключения', query: 'приключения' },
-  { id: 'horror', label: '👻 Ужасы', query: 'ужасы' },
-  { id: 'history', label: '🏛️ История', query: 'исторический роман' },
+  { id: 'fantasy', label: '🔮 Фэнтези', query: 'subject:fantasy' },
+  { id: 'scifi', label: '🚀 Фантастика', query: 'subject:science_fiction' },
+  { id: 'detective', label: '🕵️ Детективы', query: 'subject:detective' },
+  { id: 'classic', label: '📚 Классика', query: 'subject:classic' },
+  { id: 'romance', label: '💕 Романы', query: 'subject:romance' },
+  { id: 'adventure', label: '🗺️ Приключения', query: 'subject:adventure' },
+  { id: 'horror', label: '👻 Ужасы', query: 'subject:horror' },
+  { id: 'history', label: '🏛️ История', query: 'subject:history' },
 ]
 
 export default function Home() {
