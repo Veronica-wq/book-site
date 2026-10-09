@@ -41,13 +41,14 @@ function BookContent() {
       if (isOpenLibrary) {
         setBook(data)
       } else {
-        // Сохраняем accessInfo для кнопки чтения
+        // Сохраняем accessInfo и saleInfo для кнопки чтения
         setBook(
           data.volumeInfo
             ? {
                 ...data.volumeInfo,
                 _google: true,
                 _accessInfo: data.accessInfo,
+                _saleInfo: data.saleInfo,
               }
             : null
         )
@@ -214,8 +215,10 @@ function BookContent() {
             </div>
           )}
 
-          {/* Кнопки чтения */}
-          {book?._accessInfo?.webReaderLink && book?._accessInfo?.viewability !== 'NO_PAGES' && (
+          {/* Кнопки чтения — только для бесплатных книг */}
+          {book?._saleInfo?.saleability === 'FREE' &&
+            book?._accessInfo?.webReaderLink &&
+            book?._accessInfo?.viewability !== 'NO_PAGES' && (
             <a
               href={book._accessInfo.webReaderLink}
               target="_blank"
@@ -228,7 +231,7 @@ function BookContent() {
             >
               {book._accessInfo.viewability === 'ALL_PAGES'
                 ? '📖 Читать бесплатно'
-                : '👀 Читать фрагмент на Google Books'}
+                : '👀 Читать фрагмент'}
             </a>
           )}
 
