@@ -29,11 +29,9 @@ export default function Home() {
     setLoading(true)
     setSearched(true)
     try {
-      const res = await fetch(
-        `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=20`
-      )
+      const res = await fetch(`/api/books?q=${encodeURIComponent(query)}`)
       const data = await res.json()
-      setBooks(data.docs || [])
+      setBooks(data.items || [])
     } catch (err) {
       console.error(err)
       setBooks([])
@@ -69,19 +67,17 @@ export default function Home() {
           <h2 className="text-xl font-bold mb-4">Результаты поиска</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-10">
             {books.map((book) => {
-              const coverId = book.cover_i
-              const coverUrl = coverId
-                ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`
-                : null
+              const info = book.volumeInfo
+              const coverUrl = info.imageLinks?.thumbnail?.replace('http://', 'https://')
 
               return (
                 <Link
-                  key={book.key}
-                  href={`/book/${encodeURIComponent(book.key)}`}
+                  key={book.id}
+                  href={`/book/${book.id}`}
                   className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500 transition"
                 >
                   {coverUrl ? (
-                    <img src={coverUrl} alt={book.title} className="w-full h-56 object-cover" />
+                    <img src={coverUrl} alt={info.title} className="w-full h-56 object-cover" />
                   ) : (
                     <div className="w-full h-56 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">
                       Нет обложки
@@ -89,10 +85,10 @@ export default function Home() {
                   )}
                   <div className="p-3">
                     <h3 className="font-semibold text-sm line-clamp-2 group-hover:text-purple-400">
-                      {book.title}
+                      {info.title}
                     </h3>
                     <p className="text-xs text-gray-400 mt-1">
-                      {book.author_name?.join(', ') || 'Автор неизвестен'}
+                      {info.authors?.join(', ') || 'Автор неизвестен'}
                     </p>
                   </div>
                 </Link>

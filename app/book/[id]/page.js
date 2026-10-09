@@ -8,6 +8,9 @@ function BookContent() {
   const supabase = createClient()
   const bookKey = decodeURIComponent(params.id)
 
+  // Определяем источник по формату ID
+  const isOpenLibrary = bookKey.startsWith('/')
+
   const [book, setBook] = useState(null)
   const [loading, setLoading] = useState(true)
   const [reviews, setReviews] = useState([])
@@ -24,13 +27,21 @@ function BookContent() {
     loadUser()
   }, [bookKey])
 
+  // Загрузка книги — из Google Books или Open Library
   async function loadBook() {
     try {
-      const res = await fetch(`https://openlibrary.org${bookKey}.json`)
-      const data = await res.json()
-      setBook(data)
+      if (isOpenLibrary) {
+        const res = await fetch(`https://openlibrary.org${bookKey}.json`)
+        const data = await res.json()
+        setBook(data)
+      } else {
+        const res = await fetch(`https://www.googleapis.com/books/v1/volumes/${bookKey}`)
+        const data = await res.json()
+        setBook(data.volumeInfo ? { ...data.volumeInfo, _google: true } : null)
+      }
     } catch (err) {
       console.error(err)
+      setBook(null)
     }
     setLoading(false)
   }
@@ -58,11 +69,45 @@ function BookContent() {
     }
   }
 
+  // Универсальные геттеры — работают с обоими источниками
+  function getTitle() {
+    return book?.title || 'Без названия'
+  }
+
+  function getAuthors() {
+    if (book?._google) return book.authors || []
+    return book?.by_statement ? [book.by_statement] : []
+  }
+
+  function getCoverUrl(size = 'L') {
+    if (book?._google) {
+      return book.imageLinks?.thumbnail?.replace('http://', 'https://') || null
+    }
+    const coverId = book?.covers?.[0]
+    return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null
+  }
+
+  function getDescription() {
+    let desc = book?.description
+    if (typeof desc === 'object' && desc?.value) desc = desc.value
+    return desc || null
+  }
+
+  function getSubjects() {
+    if (book?._google) return book.categories || []
+    return book?.subjects || []
+  }
+
+  function getYear() {
+    if (book?._google) return book.publishedDate
+    return book?.first_publish_date
+  }
+
   async function setShelf(status) {
     if (!user) return alert('Войди в аккаунт!')
 
-    const coverId = book.covers?.[0]
-    const cover = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : null
+    const cover = getCoverUrl('M')
+    const title = getTitle()
 
     if (shelfStatus === status) {
       await supabase.from('shelves').delete()
@@ -72,7 +117,7 @@ function BookContent() {
       const { error } = await supabase.from('shelves').upsert({
         user_id: user.id,
         book_id: bookKey,
-        book_title: book.title,
+        book_title: title,
         book_cover: cover,
         status,
       }, { onConflict: 'user_id,book_id' })
@@ -84,16 +129,15 @@ function BookContent() {
   async function submitReview(e) {
     e.preventDefault()
     if (!user) return alert('Войди в аккаунт!')
-    setSubmitting(true)
+    if (!content.trim()) return alert('Напиши текст отзыва')
 
-    const coverId = book.covers?.[0]
-    const cover = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : null
+    setSubmitting(true)
 
     const { error } = await supabase.from('reviews').insert({
       user_id: user.id,
       book_id: bookKey,
-      book_title: book.title,
-      book_cover: cover,
+      book_title: getTitle(),
+      book_cover: getCoverUrl('M'),
       rating,
       content,
     })
@@ -108,13 +152,11 @@ function BookContent() {
   if (loading) return <p className="text-gray-400">Загрузка...</p>
   if (!book) return <p className="text-gray-400">Книга не найдена</p>
 
-  const coverId = book.covers?.[0]
-  const coverUrl = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : null
-
-  let description = book.description
-  if (typeof description === 'object' && description?.value) {
-    description = description.value
-  }
+  const coverUrl = getCoverUrl('L')
+  const description = getDescription()
+  const subjects = getSubjects()
+  const authors = getAuthors()
+  const year = getYear()
 
   const avgRating =
     reviews.length > 0
@@ -126,7 +168,7 @@ function BookContent() {
       {/* Информация о книге */}
       <div className="flex flex-col md:flex-row gap-6 mb-8">
         {coverUrl ? (
-          <img src={coverUrl} alt={book.title} className="w-48 rounded-lg shadow-lg shrink-0" />
+          <img src={coverUrl} alt={getTitle()} className="w-48 rounded-lg shadow-lg shrink-0" />
         ) : (
           <div className="w-48 h-72 bg-gray-800 rounded-lg flex items-center justify-center text-gray-600 shrink-0">
             Нет обложки
@@ -134,19 +176,25 @@ function BookContent() {
         )}
 
         <div className="flex-1">
-          <h1 className="text-3xl font-bold mb-2">{book.title}</h1>
-          {book.first_publish_date && (
-            <p className="text-gray-400 mb-2">Первая публикация: {book.first_publish_date}</p>
+          <h1 className="text-3xl font-bold mb-2">{getTitle()}</h1>
+
+          {authors.length > 0 && (
+            <p className="text-gray-300 mb-2">{authors.join(', ')}</p>
           )}
+
+          {year && (
+            <p className="text-gray-400 mb-2 text-sm">Год: {year}</p>
+          )}
+
           {avgRating && (
             <p className="text-yellow-400 mb-4">
               ★ {avgRating} ({reviews.length} отзывов)
             </p>
           )}
 
-          {book.subjects && book.subjects.length > 0 && (
+          {subjects.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
-              {book.subjects.slice(0, 8).map((s, i) => (
+              {subjects.slice(0, 8).map((s, i) => (
                 <span key={i} className="text-xs px-3 py-1 bg-gray-800 rounded-full text-gray-300">
                   {s}
                 </span>
