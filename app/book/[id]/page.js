@@ -214,15 +214,21 @@ function BookContent() {
             </div>
           )}
 
-          {/* Кнопка "Читать бесплатно" */}
-          {book?._accessInfo?.viewability === 'ALL_PAGES' && book?._accessInfo?.webReaderLink && (
+          {/* Кнопки чтения */}
+          {book?._accessInfo?.webReaderLink && book?._accessInfo?.viewability !== 'NO_PAGES' && (
             <a
               href={book._accessInfo.webReaderLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block mb-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg font-bold transition-all"
+              className={`inline-block mb-4 px-6 py-3 rounded-lg font-bold transition-all ${
+                book._accessInfo.viewability === 'ALL_PAGES'
+                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700'
+              }`}
             >
-              📖 Читать бесплатно
+              {book._accessInfo.viewability === 'ALL_PAGES'
+                ? '📖 Читать бесплатно'
+                : '👀 Читать фрагмент на Google Books'}
             </a>
           )}
 
