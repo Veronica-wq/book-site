@@ -8,9 +8,16 @@ export async function GET(request) {
 
   const apiKey = process.env.GOOGLE_BOOKS_API_KEY
 
-  // ─── Google Books с ключом ───
+  // ─── Google Books с улучшенным поиском ───
   try {
-    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=20&langRestrict=ru`
+    // Формируем запрос: если это название с пробелами — ищем в заголовке
+    // Например: "Гарри Поттер" → intitle:"Гарри Поттер"
+    const trimmed = query.trim()
+    const searchQuery = trimmed.includes(' ')
+      ? `intitle:"${trimmed}"`
+      : trimmed
+
+    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=20&printType=books&orderBy=relevance`
     if (apiKey) url += `&key=${apiKey}`
 
     const res = await fetch(url, { cache: 'no-store' })
@@ -21,7 +28,19 @@ export async function GET(request) {
         return Response.json({ items: data.items, source: 'google' })
       }
     }
-    console.log('Google Books status:', res.status, 'key:', !!apiKey)
+    console.log('Google Books status:', res.status)
+
+    // Если точный поиск не дал результатов — пробуем без intitle
+    if (trimmed.includes(' ')) {
+      const url2 = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(trimmed)}&maxResults=20&printType=books${apiKey ? `&key=${apiKey}` : ''}`
+      const res2 = await fetch(url2, { cache: 'no-store' })
+      if (res2.ok) {
+        const data2 = await res2.json()
+        if (data2.items && data2.items.length > 0) {
+          return Response.json({ items: data2.items, source: 'google' })
+        }
+      }
+    }
   } catch (err) {
     console.error('Google Books error:', err.message)
   }
