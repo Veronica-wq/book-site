@@ -19,6 +19,7 @@ function BookContent() {
   const [hover, setHover] = useState(0)
   const [shelfStatus, setShelfStatus] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [showPdf, setShowPdf] = useState(false)
 
   useEffect(() => {
     loadBook()
@@ -41,7 +42,6 @@ function BookContent() {
       if (isOpenLibrary) {
         setBook(data)
       } else {
-        // Сохраняем accessInfo и saleInfo для кнопки чтения
         setBook(
           data.volumeInfo
             ? {
@@ -215,23 +215,28 @@ function BookContent() {
             </div>
           )}
 
-          {/* Кнопки чтения — только для бесплатных книг */}
-          {book?._saleInfo?.saleability === 'FREE' &&
+          {/* Кнопка "Читать онлайн" — если есть PDF */}
+          {book?._accessInfo?.pdf?.downloadLink && (
+            <button
+              onClick={() => setShowPdf(true)}
+              className="inline-block mb-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg font-bold transition-all"
+            >
+              📖 Читать онлайн
+            </button>
+          )}
+
+          {/* Если PDF нет, но есть веб-ссылка — ведём на Google */}
+          {!book?._accessInfo?.pdf?.downloadLink &&
+            book?._saleInfo?.saleability === 'FREE' &&
             book?._accessInfo?.webReaderLink &&
             book?._accessInfo?.viewability !== 'NO_PAGES' && (
             <a
               href={book._accessInfo.webReaderLink}
               target="_blank"
               rel="noopener noreferrer"
-              className={`inline-block mb-4 px-6 py-3 rounded-lg font-bold transition-all ${
-                book._accessInfo.viewability === 'ALL_PAGES'
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
-                  : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700'
-              }`}
+              className="inline-block mb-4 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 rounded-lg font-bold transition-all"
             >
-              {book._accessInfo.viewability === 'ALL_PAGES'
-                ? '📖 Читать бесплатно'
-                : '👀 Читать фрагмент'}
+              👀 Читать на Google Books
             </a>
           )}
 
@@ -360,6 +365,27 @@ function BookContent() {
       {/* ─── Похожие книги ─── */}
       <SimilarBooks bookId={bookKey} isOpenLibrary={isOpenLibrary} />
 
+      {/* ─── Модальное окно чтения PDF ─── */}
+      {showPdf && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
+          <div className="flex justify-between items-center px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
+            <button
+              onClick={() => setShowPdf(false)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold"
+            >
+              ✕ Закрыть
+            </button>
+            <h2 className="text-white font-semibold truncate mx-4">{getTitle()}</h2>
+            <div className="w-20 shrink-0" />
+          </div>
+
+          <iframe
+            src={`/api/books/${encodeURIComponent(bookKey)}/pdf`}
+            className="flex-1 w-full bg-white"
+            title="Чтение книги"
+          />
+        </div>
+      )}
     </div>
   )
 }
