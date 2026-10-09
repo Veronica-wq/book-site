@@ -4,26 +4,11 @@ import Link from 'next/link'
 import { createClient } from '../lib/supabase'
 
 const RANDOM_TOPICS = [
-  'фэнтези',
-  'детектив',
-  'фантастика',
-  'любовный роман',
-  'приключения',
-  'ужасы',
-  'исторический роман',
-  'классическая литература',
-  'биография',
-  'психология',
-  'поэзия',
-  'young adult',
-  'антиутопия',
-  'мистика',
-  'триллер',
-  'нон-фикшн',
-  'саморазвитие',
-  'бизнес',
-  'научная фантастика',
-  'современная проза',
+  'фэнтези', 'детектив', 'фантастика', 'любовный роман',
+  'приключения', 'ужасы', 'исторический роман', 'классическая литература',
+  'биография', 'психология', 'поэзия', 'young adult',
+  'антиутопия', 'мистика', 'триллер', 'нон-фикшн',
+  'саморазвитие', 'бизнес', 'научная фантастика', 'современная проза',
 ]
 
 export default function Home() {
@@ -33,8 +18,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [popular, setPopular] = useState([])
   const [searched, setSearched] = useState(false)
+  const [searchMode, setSearchMode] = useState(null)
 
-  // Состояния для "Удиви меня"
   const [surprise, setSurprise] = useState(null)
   const [surpriseLoading, setSurpriseLoading] = useState(false)
 
@@ -55,9 +40,30 @@ export default function Home() {
     if (!query.trim()) return
     setLoading(true)
     setSearched(true)
+    setSearchMode('search')
     setSurprise(null)
     try {
       const res = await fetch(`/api/books?q=${encodeURIComponent(query)}`)
+      const data = await res.json()
+      setBooks(data.items || [])
+    } catch (err) {
+      console.error(err)
+      setBooks([])
+    }
+    setLoading(false)
+  }
+
+  async function searchFree() {
+    if (!query.trim()) {
+      alert('Введи название или автора для поиска бесплатных книг')
+      return
+    }
+    setLoading(true)
+    setSearched(true)
+    setSearchMode('free')
+    setSurprise(null)
+    try {
+      const res = await fetch(`/api/books?q=${encodeURIComponent(query)}&free=1`)
       const data = await res.json()
       setBooks(data.items || [])
     } catch (err) {
@@ -71,9 +77,9 @@ export default function Home() {
     setSurpriseLoading(true)
     setSearched(false)
     setBooks([])
+    setSearchMode(null)
 
     try {
-      // Пробуем до 3 раз, пока не найдём хорошую книгу с обложкой
       for (let attempt = 0; attempt < 3; attempt++) {
         const randomTopic = RANDOM_TOPICS[Math.floor(Math.random() * RANDOM_TOPICS.length)]
         const res = await fetch(`/api/books?q=${encodeURIComponent(randomTopic)}`)
@@ -89,7 +95,6 @@ export default function Home() {
           return
         }
       }
-      // Если совсем не нашли — сообщение
       setSurprise({ _error: true })
     } catch (err) {
       console.error(err)
@@ -103,25 +108,35 @@ export default function Home() {
     setQuery('')
     setBooks([])
     setSurprise(null)
+    setSearchMode(null)
   }
 
   return (
     <div>
       <h1 className="text-3xl font-bold mb-6">Найди свою следующую книгу</h1>
 
-      <form onSubmit={searchBooks} className="flex gap-2 mb-4">
+      <form onSubmit={searchBooks} className="flex flex-col md:flex-row gap-2 mb-4">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Название или автор..."
           className="flex-1 px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 focus:border-purple-500 outline-none text-white placeholder-gray-500"
         />
-        <button className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold">
-          Искать
-        </button>
+        <div className="flex gap-2">
+          <button className="flex-1 md:flex-none px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold">
+            Искать
+          </button>
+          <button
+            type="button"
+            onClick={searchFree}
+            className="flex-1 md:flex-none px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold whitespace-nowrap"
+            title="Найти только бесплатные книги"
+          >
+            📖 Бесплатные
+          </button>
+        </div>
       </form>
 
-      {/* Кнопка «Удиви меня» */}
       {!surprise && !searched && (
         <button
           onClick={surpriseMe}
@@ -132,7 +147,6 @@ export default function Home() {
         </button>
       )}
 
-      {/* ─── Удиви меня — карточка книги ─── */}
       {surprise && !surprise._error && (
         <div className="bg-gradient-to-br from-purple-900 to-pink-900 rounded-2xl p-6 mb-8 relative">
           <button
@@ -200,7 +214,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Если "Удиви меня" не нашёл */}
       {surprise && surprise._error && (
         <div className="bg-gray-900 rounded-xl p-6 mb-8 text-center">
           <p className="text-gray-400 mb-3">Не получилось найти книгу. Попробуй ещё раз?</p>
@@ -215,16 +228,20 @@ export default function Home() {
 
       {loading && <p className="text-gray-400">Ищем...</p>}
 
-      {/* Ничего не найдено */}
       {searched && !loading && books.length === 0 && (
-        <p className="text-gray-400 mb-6">Ничего не найдено. Попробуй другое название.</p>
+        <p className="text-gray-400 mb-6">
+          {searchMode === 'free'
+            ? 'Бесплатных книг по этому запросу не нашлось. Попробуй другое название.'
+            : 'Ничего не найдено. Попробуй другое название.'}
+        </p>
       )}
 
       {books.length > 0 && (
-        <h2 className="text-xl font-bold mb-4">Результаты поиска</h2>
+        <h2 className="text-xl font-bold mb-4">
+          {searchMode === 'free' ? '📖 Бесплатные книги' : 'Результаты поиска'}
+        </h2>
       )}
 
-      {/* Сетка книг */}
       {books.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-10">
           {books.map((book) => {
@@ -258,7 +275,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Популярные книги */}
       {!searched && !surprise && popular.length > 0 && (
         <>
           <div className="flex items-center gap-2 mb-4">

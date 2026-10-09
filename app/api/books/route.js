@@ -1,6 +1,7 @@
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('q') || ''
+  const freeOnly = searchParams.get('free') === '1'
 
   if (!query.trim()) {
     return Response.json({ items: [], source: 'empty' })
@@ -8,16 +9,14 @@ export async function GET(request) {
 
   const apiKey = process.env.GOOGLE_BOOKS_API_KEY
 
-  // ─── Google Books с улучшенным поиском ───
   try {
-    // Формируем запрос: если это название с пробелами — ищем в заголовке
-    // Например: "Гарри Поттер" → intitle:"Гарри Поттер"
     const trimmed = query.trim()
     const searchQuery = trimmed.includes(' ')
       ? `intitle:"${trimmed}"`
       : trimmed
 
-    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=20&printType=books&orderBy=relevance`
+    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=20&printType=books`
+    if (freeOnly) url += '&filter=free-ebooks'
     if (apiKey) url += `&key=${apiKey}`
 
     const res = await fetch(url, { cache: 'no-store' })
@@ -28,11 +27,12 @@ export async function GET(request) {
         return Response.json({ items: data.items, source: 'google' })
       }
     }
-    console.log('Google Books status:', res.status)
 
-    // Если точный поиск не дал результатов — пробуем без intitle
     if (trimmed.includes(' ')) {
-      const url2 = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(trimmed)}&maxResults=20&printType=books${apiKey ? `&key=${apiKey}` : ''}`
+      let url2 = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(trimmed)}&maxResults=20&printType=books`
+      if (freeOnly) url2 += '&filter=free-ebooks'
+      if (apiKey) url2 += `&key=${apiKey}`
+
       const res2 = await fetch(url2, { cache: 'no-store' })
       if (res2.ok) {
         const data2 = await res2.json()
@@ -45,7 +45,7 @@ export async function GET(request) {
     console.error('Google Books error:', err.message)
   }
 
-  // ─── Fallback: Open Library ───
+  // Fallback: Open Library
   try {
     const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=20`
     const res = await fetch(url, {
