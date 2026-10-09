@@ -6,9 +6,13 @@ export async function GET(request) {
     return Response.json({ items: [], source: 'empty' })
   }
 
-  // ─── ШАГ 1: Google Books ───
+  const apiKey = process.env.GOOGLE_BOOKS_API_KEY
+
+  // ─── Google Books с ключом ───
   try {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=20&langRestrict=ru`
+    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=20&langRestrict=ru`
+    if (apiKey) url += `&key=${apiKey}`
+
     const res = await fetch(url, { cache: 'no-store' })
 
     if (res.ok) {
@@ -17,29 +21,20 @@ export async function GET(request) {
         return Response.json({ items: data.items, source: 'google' })
       }
     }
-    console.log('Google Books status:', res.status)
+    console.log('Google Books status:', res.status, 'key:', !!apiKey)
   } catch (err) {
     console.error('Google Books error:', err.message)
   }
 
-  // ─── ШАГ 2: Open Library с имитацией браузера ───
+  // ─── Fallback: Open Library ───
   try {
     const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=20`
-
     const res = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
+      headers: { 'User-Agent': 'BookHub/1.0', Accept: 'application/json' },
       cache: 'no-store',
     })
 
-    if (!res.ok) {
-      console.error('Open Library status:', res.status)
-      return Response.json({ items: [], error: `OL: ${res.status}` })
-    }
+    if (!res.ok) return Response.json({ items: [], error: `OL: ${res.status}` })
 
     const data = await res.json()
     const items = (data.docs || [])
@@ -56,10 +51,8 @@ export async function GET(request) {
         _source: 'openlibrary',
       }))
 
-    console.log('Open Library found:', items.length, 'books')
     return Response.json({ items, source: 'openlibrary' })
   } catch (err) {
-    console.error('Open Library error:', err.message)
     return Response.json({ items: [], error: err.message })
   }
 }
