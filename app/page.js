@@ -3,15 +3,27 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '../lib/supabase'
 
-const CATEGORIES = [
-  { id: 'fantasy', label: '🔮 Фэнтези', query: 'фэнтези' },
-  { id: 'scifi', label: '🚀 Фантастика', query: 'фантастика' },
-  { id: 'detective', label: '🕵️ Детективы', query: 'детектив' },
-  { id: 'classic', label: '📚 Классика', query: 'классическая литература' },
-  { id: 'romance', label: '💕 Романы', query: 'любовный роман' },
-  { id: 'adventure', label: '🗺️ Приключения', query: 'приключения' },
-  { id: 'horror', label: '👻 Ужасы', query: 'ужасы' },
-  { id: 'history', label: '🏛️ История', query: 'исторический роман' },
+const RANDOM_TOPICS = [
+  'фэнтези',
+  'детектив',
+  'фантастика',
+  'любовный роман',
+  'приключения',
+  'ужасы',
+  'исторический роман',
+  'классическая литература',
+  'биография',
+  'психология',
+  'поэзия',
+  'young adult',
+  'антиутопия',
+  'мистика',
+  'триллер',
+  'нон-фикшн',
+  'саморазвитие',
+  'бизнес',
+  'научная фантастика',
+  'современная проза',
 ]
 
 export default function Home() {
@@ -21,7 +33,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [popular, setPopular] = useState([])
   const [searched, setSearched] = useState(false)
-  const [activeCategory, setActiveCategory] = useState(null)
+
+  // Состояния для "Удиви меня"
+  const [surprise, setSurprise] = useState(null)
+  const [surpriseLoading, setSurpriseLoading] = useState(false)
 
   useEffect(() => {
     loadPopular()
@@ -40,7 +55,7 @@ export default function Home() {
     if (!query.trim()) return
     setLoading(true)
     setSearched(true)
-    setActiveCategory(null)
+    setSurprise(null)
     try {
       const res = await fetch(`/api/books?q=${encodeURIComponent(query)}`)
       const data = await res.json()
@@ -52,40 +67,49 @@ export default function Home() {
     setLoading(false)
   }
 
-  async function loadCategory(category) {
-    setActiveCategory(category.id)
-    setSearched(true)
-    setLoading(true)
-    setQuery('')
+  async function surpriseMe() {
+    setSurpriseLoading(true)
+    setSearched(false)
+    setBooks([])
+
     try {
-      const res = await fetch(`/api/books?q=${encodeURIComponent(category.query)}`)
-      const data = await res.json()
-      let items = data.items || []
+      // Пробуем до 3 раз, пока не найдём хорошую книгу с обложкой
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const randomTopic = RANDOM_TOPICS[Math.floor(Math.random() * RANDOM_TOPICS.length)]
+        const res = await fetch(`/api/books?q=${encodeURIComponent(randomTopic)}`)
+        const data = await res.json()
+        const items = (data.items || []).filter(
+          (b) => b.volumeInfo?.imageLinks?.thumbnail && b.volumeInfo?.description
+        )
 
-      // Для категорий показываем только книги Google Books
-      // (у Open Library плохие категории — один мусор)
-      items = items.filter((b) => !b._source || b._source === 'google')
-
-      setBooks(items)
+        if (items.length > 0) {
+          const randomBook = items[Math.floor(Math.random() * items.length)]
+          setSurprise(randomBook)
+          setSurpriseLoading(false)
+          return
+        }
+      }
+      // Если совсем не нашли — сообщение
+      setSurprise({ _error: true })
     } catch (err) {
       console.error(err)
-      setBooks([])
+      setSurprise({ _error: true })
     }
-    setLoading(false)
+    setSurpriseLoading(false)
   }
 
-  function clearSearch() {
+  function clearAll() {
     setSearched(false)
     setQuery('')
-    setActiveCategory(null)
     setBooks([])
+    setSurprise(null)
   }
 
   return (
     <div>
       <h1 className="text-3xl font-bold mb-6">Найди свою следующую книгу</h1>
 
-      <form onSubmit={searchBooks} className="flex gap-2 mb-6">
+      <form onSubmit={searchBooks} className="flex gap-2 mb-4">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -97,46 +121,106 @@ export default function Home() {
         </button>
       </form>
 
-      {/* Кнопки категорий */}
-      <div className="flex flex-wrap gap-2 mb-8">
-        {CATEGORIES.map((cat) => (
+      {/* Кнопка «Удиви меня» */}
+      {!surprise && !searched && (
+        <button
+          onClick={surpriseMe}
+          disabled={surpriseLoading}
+          className="w-full md:w-auto mb-8 px-6 py-3 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 disabled:opacity-50 rounded-lg font-bold text-lg transition-all"
+        >
+          {surpriseLoading ? '🎲 Ищем что-то интересное...' : '🎲 Удиви меня!'}
+        </button>
+      )}
+
+      {/* ─── Удиви меня — карточка книги ─── */}
+      {surprise && !surprise._error && (
+        <div className="bg-gradient-to-br from-purple-900 to-pink-900 rounded-2xl p-6 mb-8 relative">
           <button
-            key={cat.id}
-            onClick={() => loadCategory(cat)}
-            className={`px-4 py-2 rounded-lg font-semibold transition text-sm ${
-              activeCategory === cat.id
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-            }`}
+            onClick={() => setSurprise(null)}
+            className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl w-8 h-8 flex items-center justify-center"
+            title="Закрыть"
           >
-            {cat.label}
+            ✕
           </button>
-        ))}
-      </div>
 
-      {loading && <p className="text-gray-400">Ищем...</p>}
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-2xl">🎲</span>
+            <h2 className="text-xl font-bold text-white">Тебе может понравиться</h2>
+          </div>
 
-      {/* Заголовок активной категории */}
-      {activeCategory && !loading && books.length > 0 && (
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">
-            {CATEGORIES.find((c) => c.id === activeCategory)?.label}
-          </h2>
+          <div className="flex flex-col md:flex-row gap-6">
+            {surprise.volumeInfo.imageLinks?.thumbnail && (
+              <img
+                src={surprise.volumeInfo.imageLinks.thumbnail.replace('http://', 'https://')}
+                alt={surprise.volumeInfo.title}
+                className="w-40 rounded-lg shadow-2xl shrink-0 self-center md:self-start"
+              />
+            )}
+
+            <div className="flex-1 min-w-0">
+              <h3 className="text-2xl font-bold mb-2 text-white">
+                {surprise.volumeInfo.title}
+              </h3>
+
+              {surprise.volumeInfo.authors && (
+                <p className="text-purple-200 mb-3">
+                  {surprise.volumeInfo.authors.join(', ')}
+                </p>
+              )}
+
+              {surprise.volumeInfo.publishedDate && (
+                <p className="text-purple-200/70 text-sm mb-3">
+                  Год: {surprise.volumeInfo.publishedDate}
+                </p>
+              )}
+
+              {surprise.volumeInfo.description && (
+                <p className="text-white/90 text-sm line-clamp-5 mb-4">
+                  {surprise.volumeInfo.description}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/book/${encodeURIComponent(surprise.id)}`}
+                  className="px-5 py-2 bg-white text-purple-900 hover:bg-gray-100 rounded-lg font-semibold"
+                >
+                  Открыть книгу →
+                </Link>
+                <button
+                  onClick={surpriseMe}
+                  disabled={surpriseLoading}
+                  className="px-5 py-2 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-lg font-semibold text-white"
+                >
+                  {surpriseLoading ? 'Ищем...' : '🎲 Другая книга'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Если "Удиви меня" не нашёл */}
+      {surprise && surprise._error && (
+        <div className="bg-gray-900 rounded-xl p-6 mb-8 text-center">
+          <p className="text-gray-400 mb-3">Не получилось найти книгу. Попробуй ещё раз?</p>
           <button
-            onClick={clearSearch}
-            className="text-sm text-gray-400 hover:text-purple-400"
+            onClick={surpriseMe}
+            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold"
           >
-            ✕ Закрыть
+            🎲 Попробовать снова
           </button>
         </div>
       )}
+
+      {loading && <p className="text-gray-400">Ищем...</p>}
 
       {/* Ничего не найдено */}
       {searched && !loading && books.length === 0 && (
         <p className="text-gray-400 mb-6">Ничего не найдено. Попробуй другое название.</p>
       )}
 
-      {books.length > 0 && !activeCategory && (
+      {books.length > 0 && (
         <h2 className="text-xl font-bold mb-4">Результаты поиска</h2>
       )}
 
@@ -175,7 +259,7 @@ export default function Home() {
       )}
 
       {/* Популярные книги */}
-      {!searched && popular.length > 0 && (
+      {!searched && !surprise && popular.length > 0 && (
         <>
           <div className="flex items-center gap-2 mb-4">
             <h2 className="text-xl font-bold">🔥 Популярные на BookHub</h2>
@@ -213,7 +297,7 @@ export default function Home() {
         </>
       )}
 
-      {!searched && popular.length === 0 && (
+      {!searched && !surprise && popular.length === 0 && (
         <div className="bg-gray-900 rounded-xl p-8 text-center text-gray-400">
           Пока никто не добавлял книги на полки. Будь первой! 👆
         </div>
