@@ -28,23 +28,31 @@ function BookContent() {
   }, [bookKey])
 
   // Загрузка книги — из Google Books или Open Library
-  async function loadBook() {
-    try {
-      if (isOpenLibrary) {
-        const res = await fetch(`https://openlibrary.org${bookKey}.json`)
-        const data = await res.json()
-        setBook(data)
-      } else {
-        const res = await fetch(`https://www.googleapis.com/books/v1/volumes/${bookKey}`)
-        const data = await res.json()
-        setBook(data.volumeInfo ? { ...data.volumeInfo, _google: true } : null)
-      }
-    } catch (err) {
-      console.error(err)
+async function loadBook() {
+  try {
+    const res = await fetch(`/api/books/${encodeURIComponent(bookKey)}`)
+
+    if (!res.ok) {
       setBook(null)
+      setLoading(false)
+      return
     }
-    setLoading(false)
+
+    const data = await res.json()
+
+    if (isOpenLibrary) {
+      // Open Library возвращает объект книги напрямую
+      setBook(data)
+    } else {
+      // Google Books возвращает { volumeInfo: { ... } }
+      setBook(data.volumeInfo ? { ...data.volumeInfo, _google: true } : null)
+    }
+  } catch (err) {
+    console.error(err)
+    setBook(null)
   }
+  setLoading(false)
+}
 
   async function loadReviews() {
     const { data } = await supabase
